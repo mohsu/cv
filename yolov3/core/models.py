@@ -32,13 +32,6 @@ from cv.yolov3.core.layers import (
     multiclass_nms
 )
 
-flags.DEFINE_integer('yolo_max_boxes', 10, 'maximum number of boxes per image')
-flags.DEFINE_float('yolo_iou_threshold', 0.45, 'nms iou threshold')
-flags.DEFINE_float('yolo_score_threshold', 0.2, 'nms score threshold')
-flags.DEFINE_float('yolo_soft_nms_sigma', 0.0, 'soft_nms_sigma')
-flags.DEFINE_float('yolo_label_smoothing', 0.0, 'label smoothing alpha')
-flags.DEFINE_float('yolo_scale_xy', 1.1, 'yolo_scale_xy', 1.0, None)
-
 yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
                          (59, 119), (116, 90), (156, 198), (373, 326)],
                         np.float32) / 416
@@ -218,7 +211,7 @@ def YoloCustomizeModel(size=None, channels=3,
 
 def YoloCustomizeModelMultiCategory(size=None, channels=3,
                                     anchors=yolo_anchors, classes=[80], masks=None, training=False,
-                                    model=None, normalize_input=True, min_box=None):
+                                    model=None, normalize_input=True, min_box=None, connected=False):
     """
     :param size:
     :param channels:
@@ -248,10 +241,14 @@ def YoloCustomizeModelMultiCategory(size=None, channels=3,
     if tiny:
         if model is None:
             x_skip, x = DarknetTiny(name='yolo_darknet')(x)
+        else:
+            x_skip, x = model(x)
+
+        if not connected:
             x = y1 = YoloConvTiny(256, name='yolo_conv_0')(x)
             y2 = YoloConvTiny(128, name='yolo_conv_1')((x, x_skip))
         else:
-            y1, y2 = model(x)
+            y1, y2 = x_skip, x
 
         output_0 = YoloOutput(256, len(masks[0]), classes, name='yolo_output_0')(y1)
         output_1 = YoloOutput(128, len(masks[1]), classes, name='yolo_output_1')(y2)

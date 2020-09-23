@@ -71,6 +71,15 @@ flags.DEFINE_enum('transfer', 'same',
 flags.DEFINE_integer('weights_num_classes', None, 'specify num class for `weights` file if different, '
                                                   'useful in transfer learning with different number of classes')
 
+"""
+layer options
+"""
+flags.DEFINE_integer('yolo_max_boxes', 10, 'maximum number of boxes per image')
+flags.DEFINE_float('yolo_iou_threshold', 0.45, 'nms iou threshold')
+flags.DEFINE_float('yolo_score_threshold', 0.2, 'nms score threshold')
+flags.DEFINE_float('yolo_soft_nms_sigma', 0.0, 'soft_nms_sigma')
+flags.DEFINE_float('yolo_label_smoothing', 0.0, 'label smoothing alpha')
+flags.DEFINE_float('yolo_scale_xy', 1.1, 'yolo_scale_xy', 1.0, None)
 
 def run_eager_fit(model, train_dataset, val_dataset, optimizer, loss):
     # Eager mode is great for debugging
@@ -172,7 +181,6 @@ def train(model, train_dataset, val_dataset):
         plt_his = PlotHistory()
         callbacks = [
             # ReduceLROnPlateau(verbose=1, patience=FLAGS.lr_patience),
-            # CosineDecay(initial_learning_rate=FLAGS.learning_rate)
             EarlyStopping(patience=FLAGS.early_stop, verbose=1),
             ModelCheckpoint(checkpoint_path,
                             monitor='val_loss', verbose=0, save_best_only=False,
