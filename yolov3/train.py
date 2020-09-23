@@ -48,7 +48,7 @@ flags.DEFINE_float('learning_rate', default=1e-3, help='learning rate')
 learning rate decay scheduler
 flags.DEFINE_integer('lr_patience', default=20, help='lr_patience')
 """
-flags.DEFINE_integer("decay_steps", default=50 , help="Number of steps to decay over.")
+flags.DEFINE_integer("decay_steps", default=50, help="Number of steps to decay over.")
 flags.DEFINE_float("lr_alpha", default=0.9, help="Minimum learning rate value as a fraction of initial_learning_rate")
 
 flags.DEFINE_integer('freeze', default=0, help='freeze layers before xth layer')
@@ -80,6 +80,7 @@ flags.DEFINE_float('yolo_score_threshold', 0.2, 'nms score threshold')
 flags.DEFINE_float('yolo_soft_nms_sigma', 0.0, 'soft_nms_sigma')
 flags.DEFINE_float('yolo_label_smoothing', 0.0, 'label smoothing alpha')
 flags.DEFINE_float('yolo_scale_xy', 1.1, 'yolo_scale_xy', 1.0, None)
+
 
 def run_eager_fit(model, train_dataset, val_dataset, optimizer, loss):
     # Eager mode is great for debugging
@@ -129,7 +130,6 @@ def run_eager_fit(model, train_dataset, val_dataset, optimizer, loss):
 
 @logger.catch(reraise=True)
 def train(model, train_dataset, val_dataset):
-
     flag_utils.log_flag()
     """Configure the model for transfer learning"""
     if FLAGS.transfer == 'none':
