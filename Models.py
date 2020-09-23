@@ -160,7 +160,7 @@ class YoloModel(CNNModel):
 
     def __init__(self, name, input_size, class_names,
                  training, base_model, anchors, channels=3, grid_factor=32,
-                 normalize_input=True, expand_pixel=0, min_box=None):
+                 normalize_input=True, expand_pixel=0, min_box=None, connected=False):
         super().__init__(name, input_size)
         self.class_names = class_names
         self.training = training
@@ -178,7 +178,8 @@ class YoloModel(CNNModel):
                                                      training=training,
                                                      model=base_model,
                                                      normalize_input=normalize_input,
-                                                     min_box=min_box)
+                                                     min_box=min_box,
+                                                     connected=connected)
 
         self.__dict__.update(yolo_model.__dict__)
 
