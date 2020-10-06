@@ -160,7 +160,7 @@ class YoloModel(CNNModel):
 
     def __init__(self, name, input_size, class_names,
                  training, base_model, anchors, channels=3, grid_factor=32,
-                 normalize_input=True, expand_pixel=0, min_box=None, connected=False):
+                 normalize_input=True, expand_pixel=0, min_box_size=None, connected=False, max_box=10):
         super().__init__(name, input_size)
         self.class_names = class_names
         self.training = training
@@ -170,6 +170,7 @@ class YoloModel(CNNModel):
         self.img_aug = None
         self.grid_factor = grid_factor
         self.expand_pixel = expand_pixel
+        self.max_box = max_box
 
         yolo_model = YoloCustomizeModelMultiCategory(input_size[0],
                                                      channels=channels,
@@ -178,8 +179,9 @@ class YoloModel(CNNModel):
                                                      training=training,
                                                      model=base_model,
                                                      normalize_input=normalize_input,
-                                                     min_box=min_box,
-                                                     connected=connected)
+                                                     min_box_size=min_box_size,
+                                                     connected=connected,
+                                                     max_box=max_box)
 
         self.__dict__.update(yolo_model.__dict__)
 

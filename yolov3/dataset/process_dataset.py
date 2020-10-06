@@ -32,7 +32,7 @@ def process_train_dataset(model, train_p, batch_size):
 @logger.catch(reraise=True)
 def get_train_dataset(model, voc_set, batch_size=24):
     """train/validation dataset"""
-    train_p = TfDataset(model.input_size[0], model.channels, model.img_aug, model.num_classes)
+    train_p = TfDataset(model.input_size[0], model.channels, model.img_aug, model.num_classes, model.max_box)
     train_p.dataset = train_p.load_voc_dataset(voc_set.training, model.to_index)
 
     process_train_dataset(model, train_p, batch_size)
@@ -47,7 +47,7 @@ def get_train_dataset(model, voc_set, batch_size=24):
 
 @logger.catch(reraise=True)
 def get_test_dataset(model, voc_set, batch_size=24):
-    test_p = TfDataset(model.input_size[0], model.channels, model.img_aug, model.num_classes)
+    test_p = TfDataset(model.input_size[0], model.channels, model.img_aug, model.num_classes, model.max_box)
     test_p.dataset = test_p.load_voc_dataset(voc_set.testing, model.to_index)
     test_p.dataset_map(test_p.parse_detection_example(test_p.image_feature_map, len(model.num_classes), model.channels))
     test_p.dataset_map(test_p.tf_augment_data)

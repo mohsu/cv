@@ -60,12 +60,13 @@ class TfDataset:
     def dataset(self, value):
         self._dataset = value
 
-    def __init__(self, size, num_channel, img_aug, num_classes, image_feature_map=None, label_smoothing_alpha=0.0):
+    def __init__(self, size, num_channel, img_aug, num_classes, max_box=10, image_feature_map=None, label_smoothing_alpha=0.0):
         self.img_aug = img_aug
         self.size = size
         self.num_channel = num_channel
         self.num_classes = num_classes
         self.sum_num_classes = sum(num_classes)
+        self.max_box = max_box
         self.image_feature_map = image_feature_map if image_feature_map is not None else IMAGE_FEATURE_MAP
         self._dataset = None
         self.label_smoothing_alpha = label_smoothing_alpha
@@ -189,7 +190,7 @@ class TfDataset:
 
         images, bboxes = self.img_aug.aug([image], [bboi])
 
-        y_train = np.zeros((get_flag("yolo_max_boxes", 80), 4 + self.sum_num_classes), dtype=np.float32)
+        y_train = np.zeros((get_flag("yolo_max_boxes", self.max_box), 4 + self.sum_num_classes), dtype=np.float32)
         bbs = bboxes[0].remove_out_of_image().clip_out_of_image()
 
         for i, bbox in enumerate(bbs.bounding_boxes):
@@ -214,7 +215,7 @@ class TfDataset:
         x_train, y_train = tf.numpy_function(self.augment_data, [x_train, y_train], [tf.float32, tf.float32])
 
         x_train.set_shape((self.size, self.size, self.num_channel))
-        y_train.set_shape((get_flag("yolo_max_boxes", 80), 4 + self.sum_num_classes))
+        y_train.set_shape((get_flag("yolo_max_boxes", self.max_box), 4 + self.sum_num_classes))
 
         return x_train, y_train
 
