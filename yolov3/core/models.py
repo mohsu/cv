@@ -94,8 +94,8 @@ def YoloV3(size=None, channels=3, anchors=yolo_anchors, masks=yolo_anchor_masks,
     return Model(inputs, outputs, name='yolov3')
 
 
-def DarknetTiny(name=None):
-    x = inputs = Input([None, None, 3])
+def DarknetTiny(name=None, channels=3):
+    x = inputs = Input([None, None, channels])
     x = Lambda(lambda _input: _input / 255.0)(x)
     x = DarknetConv(x, 16, 3, mish_activation=True)
     x = MaxPool2D(2, 2, 'same')(x)
@@ -175,7 +175,7 @@ def YoloCustomizeModel(size=None, channels=3,
 
     if tiny:
         if model is None:
-            x_skip, x = DarknetTiny(name='yolo_darknet')(x)
+            x_skip, x = DarknetTiny(name='yolo_darknet', channels=channels)(x)
             x = y1 = YoloConvTiny(256, name='yolo_conv_0')(x)
             x = y2 = YoloConvTiny(128, name='yolo_conv_1')((x, x_skip))
         else:
@@ -211,7 +211,7 @@ def YoloCustomizeModel(size=None, channels=3,
 
 def YoloCustomizeModelMultiCategory(size=None, channels=3,
                                     anchors=yolo_anchors, classes=[80], masks=None, training=False,
-                                    model=None, normalize_input=True, min_box=None, connected=False):
+                                    model=None, normalize_input=True, min_box_size=None, connected=False, max_box=10):
     """
     :param size:
     :param channels:
@@ -240,7 +240,7 @@ def YoloCustomizeModelMultiCategory(size=None, channels=3,
 
     if tiny:
         if model is None:
-            x_skip, x = DarknetTiny(name='yolo_darknet')(x)
+            x_skip, x = DarknetTiny(name='yolo_darknet', channels=channels)(x)
         else:
             x_skip, x = model(x)
 
@@ -269,11 +269,11 @@ def YoloCustomizeModelMultiCategory(size=None, channels=3,
     if training:
         return Model(inputs, outputs, name='yolov3')
 
-    if min_box is not None:
-        min_box = min_box / size
+    if min_box_size is not None:
+        min_box_size = min_box_size / size
     boxes = [Lambda(lambda x: yolo_boxes(x, anchors[masks[i]], classes),
                     name=f'yolo_boxes_{i}')(outputs[i]) for i in range(num_layer)]
     preds = Lambda(lambda x: stack_preds(x, classes), name="stack_pred")((box[:3] for box in boxes))
-    preds = Lambda(lambda x: multiclass_nms(x, min_box), name="nms")(preds)
+    preds = Lambda(lambda x: multiclass_nms(x, min_box_size, max_box), name="nms")(preds)
 
     return Model(inputs, preds, name='yolov3')
