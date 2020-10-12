@@ -187,12 +187,18 @@ class YoloModel(CNNModel):
 
     def process_test_data(self, images, convert_BGR=False):
         images = self.img_aug.aug(images)[0]
+        if self.channels != 3:
+            if convert_BGR:
+                cvt_code = image_processing.COLOR_RGB2GRAY
+            else:
+                cvt_code = image_processing.COLOR_BGR2GRAY
+            images = [np.expand_dims(image_processing.cvtColor(image, cvt_code), -1) for image in images]
         images = np.array(images)
-        if convert_BGR:
+        if self.channels == 3 and convert_BGR:
             blue = images[..., 0].copy()
             images[..., 0], images[..., 2] = images[..., 2], blue
 
-        return np.array(images)
+        return images
 
     def detect(self, images, convert_BGR=False, to_annotation=False):
         """
