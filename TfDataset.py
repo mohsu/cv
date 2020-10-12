@@ -9,6 +9,7 @@
 from absl.flags import FLAGS
 
 # 3rd-party packages
+import cv2
 import imgaug as ia
 import numpy as np
 import tensorflow as tf
@@ -151,6 +152,7 @@ class TfDataset:
             # x_train
             x_train = tf.io.read_file(features["image/path"])
             x_train = tf.image.decode_png(x_train, channels=num_channels)
+            x_train = cv2.cvtColor(x_train, cv2.COLOR_RGB2BGR)
 
             # y_train
             labels = tf.reshape(tf.cast(tf.sparse.to_dense(features["image/object/class/label"]), tf.float32),
