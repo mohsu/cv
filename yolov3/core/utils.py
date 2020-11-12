@@ -57,6 +57,7 @@ def _get_v(h2, w2, h1, w1):
     :param w1: pred_w
     :return:
     """
+
     @tf.custom_gradient
     def _get_grad_v(height, width):
         arctan = tf.atan(tf.math.divide_no_nan(w2, h2)) - tf.atan(
@@ -130,7 +131,7 @@ def calculate_iou(box_1, box_2, DIoU=False, CIoU=False, broadcast=True):
             if CIoU:
                 v = _get_v(h2, w2, h1, w1)
                 alpha = tf.math.divide_no_nan(v, ((1 - iou) + v))
-                iou = iou - alpha * v # diou - alpha * v
+                iou = iou - alpha * v  # diou - alpha * v
             iou = tf.clip_by_value(iou, -1.0, 1.0)
     return iou
 
@@ -192,7 +193,7 @@ def convert2_class(scores, classes):
     scores = tf.split(scores, classes, axis=-1)
     selected_scores, selected_classes = [], []
     for c in range(len(classes)):
-        selected_class = tf.argmax(scores[c], axis=-1)
+        selected_class = tf.argmax(scores[c], axis=-1)  # at least one dim
         ind = tf.cast(tf.expand_dims(selected_class, 1), tf.int32)
         ran = tf.expand_dims(tf.range(tf.shape(selected_class)[0], dtype=tf.int32), 1)
         ind = tf.concat([ran, ind], axis=1)
@@ -205,12 +206,14 @@ def convert2_class(scores, classes):
 
 def decode_tf_nms(preds, test_image_shape=None):
     boxes, scores, nums = preds
+    boxes = tf.map_fn(lambda x: x[0][:x[1]], elems=(boxes, nums), dtype=tf.float32)
+    scores = tf.map_fn(lambda x: x[0][:x[1]], elems=(scores, nums), dtype=tf.float32)
     if test_image_shape:
         boxes = rescale_pred_wh(boxes, test_image_shape)
-    boxes = tf.split(boxes, nums)
-    scores = tf.split(scores, nums)
+    # boxes = tf.split(boxes, nums)
+    # scores = tf.split(scores, nums)
 
-    boxes = [box.numpy() for box in boxes]
+    boxes = [box for box in boxes]
     scores = [score.numpy() for score in scores]
 
     return boxes, scores

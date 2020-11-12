@@ -198,12 +198,13 @@ def multiclass_nms(pred, min_box_size=None, max_box=10):
     if min_box_size is not None:
         small_boxes = tf.logical_and((batch_boxes[..., 3] - batch_boxes[..., 1]) < min_box_size * 2,
                                      (batch_boxes[..., 2] - batch_boxes[..., 0]) < min_box_size * 2)
-        batch_scores_combined = tf.where(tf.expand_dims(small_boxes, -1), tf.zeros_like(batch_scores_combined), batch_scores_combined)
+        batch_scores_combined = tf.where(tf.expand_dims(small_boxes, -1), tf.zeros_like(batch_scores_combined),
+                                         batch_scores_combined)
 
     batch_size = tf.shape(batch_boxes)[0]
     boxes = tf.zeros([0, 4])
     scores = tf.zeros([0, tf.shape(batch_scores)[-1]])
-    nums = tf.zeros([0], dtype=tf.int32)
+    nums = tf.zeros([0])
 
     def cond(i, *args):
         return tf.less(i, batch_size)
@@ -237,13 +238,58 @@ def multiclass_nms(pred, min_box_size=None, max_box=10):
     return boxes, scores, nums
 
 
+@tf.function
+def multiclass_nms_padded(pred, min_box_size=None, max_box=10):
+    batch_boxes, batch_scores_combined, batch_scores = tf.split(pred, (4, 1, -1), axis=-1)
+
+    # filter small boxes
+    if min_box_size is not None:
+        small_boxes = tf.logical_and((batch_boxes[..., 3] - batch_boxes[..., 1]) < min_box_size * 2,
+                                     (batch_boxes[..., 2] - batch_boxes[..., 0]) < min_box_size * 2)
+        batch_scores_combined = tf.where(tf.expand_dims(small_boxes, -1), tf.zeros_like(batch_scores_combined),
+                                         batch_scores_combined)
+
+    batch_size = tf.shape(batch_boxes)[0]
+
+    # boxes = tf.Variable(tf.zeros((batch_size, max_box, 4)))
+    # scores = tf.Variable(tf.zeros([batch_size, max_box, tf.shape(batch_scores)[-1]]))
+    # nums = tf.Variable(tf.zeros([batch_size]))
+
+    def cond(i, *args):
+        return tf.less(i, batch_size)
+
+    @tf.function
+    def body(boxes, scores_combined, scores):
+        selected_indices, selected_scores = tf.image.non_max_suppression_with_scores(
+            tf.reshape(boxes, (-1, 4)),
+            tf.reshape(scores_combined, (-1,)),
+            max_output_size=get_flag("yolo_max_boxes", max_box),
+            iou_threshold=get_flag("yolo_iou_threshold", 0.45),
+            score_threshold=get_flag("yolo_score_threshold", 0.2),
+            soft_nms_sigma=get_flag("yolo_soft_nms_sigma", 0.0))
+
+        selected_count = tf.shape(selected_indices)[0]
+        selected_boxes = tf.gather(boxes, selected_indices)
+        selected_scores = tf.gather(scores, selected_indices)
+        pad_num = max_box - selected_count
+
+        return tf.concat([selected_boxes, tf.zeros((pad_num, 4), dtype=tf.float32)], axis=0), \
+               tf.concat([selected_scores, tf.zeros((pad_num, tf.shape(batch_scores)[-1]), dtype=tf.float32)], axis=0),\
+               selected_count
+
+    boxes, scores, nums = tf.map_fn(lambda x: body(x[0], x[1], x[2]),
+                                    elems=(batch_boxes, batch_scores_combined, batch_scores),
+                                    dtype=(tf.float32, tf.float32, tf.int32),
+                                    parallel_iterations=8)
+
+    return boxes, scores, nums
+
+
 def multiclass_nms_tensorarray(pred):
     batch_boxes, batch_scores_combined, batch_scores = tf.split(pred, (4, 1, -1), axis=-1)
     boxes = tf.TensorArray(tf.float32, size=0, dynamic_size=True, infer_shape=False, clear_after_read=True)
     scores = tf.TensorArray(tf.float32, size=0, dynamic_size=True, infer_shape=False, clear_after_read=True)
     nums = tf.TensorArray(tf.int32, size=0, dynamic_size=True, infer_shape=False, clear_after_read=True)
-
-    # selected = tf.TensorArray(tf.float32, size=0, dynamic_size=True, infer_shape=False, clear_after_read=True)
 
     def cond(i, boxes, scores, nums):
         return tf.less(i, tf.shape(batch_boxes)[0])

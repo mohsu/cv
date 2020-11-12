@@ -15,8 +15,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
     Input,
     Lambda,
-    MaxPool2D,
-    Flatten
+    MaxPool2D
 )
 
 # self-defined packages
@@ -29,7 +28,8 @@ from cv.yolov3.core.layers import (
     yolo_boxes,
     yolo_nms,
     stack_preds,
-    multiclass_nms
+    multiclass_nms,
+    multiclass_nms_padded
 )
 
 yolo_anchors = np.array([(10, 13), (16, 30), (33, 23), (30, 61), (62, 45),
@@ -274,6 +274,6 @@ def YoloCustomizeModelMultiCategory(size=None, channels=3,
     boxes = [Lambda(lambda x: yolo_boxes(x, anchors[masks[i]], classes),
                     name=f'yolo_boxes_{i}')(outputs[i]) for i in range(num_layer)]
     preds = Lambda(lambda x: stack_preds(x, classes), name="stack_pred")((box[:3] for box in boxes))
-    preds = Lambda(lambda x: multiclass_nms(x, min_box_size, max_box), name="nms")(preds)
+    preds = Lambda(lambda x: multiclass_nms_padded(x, min_box_size, max_box), name="nms")(preds)
 
     return Model(inputs, preds, name='yolov3')

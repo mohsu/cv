@@ -6,11 +6,14 @@
 """
 
 # python packages
+import json
+from collections import defaultdict
 
 # 3rd-party packages
 import imgaug as ia
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from tensorflow.keras.models import load_model, Model
 from loguru import logger
 
@@ -85,6 +88,16 @@ class CNNModel(Model):
 
         logger.debug('Load weights {}.'.format(weight_path))
         super(CNNModel, self).load_weights(weight_path, **kwargs)
+
+    def save_to_serve(self, model_dir, version="00000001", overwrite=True):
+        output_dir = os_path.join(model_dir, self.model_name, version)
+        tf.saved_model.save(self, output_dir)
+        # tf.keras.models.save_model(self,
+        #                            output_dir,
+        #                            overwrite=overwrite,
+        #                            include_optimizer=True,
+        #                            save_format=None)
+        logger.debug(f"model has been exported to {output_dir}")
 
 
 class ClassificationModel(CNNModel):
@@ -200,9 +213,52 @@ class YoloModel(CNNModel):
 
         return images
 
-    def detect(self, images, convert_BGR=False, to_annotation=False):
+    def predict_on_docker(self, test_images, version="0001", port=8502):
+        import grpc
+        from tensorflow_serving.apis import predict_pb2
+        from tensorflow_serving.apis import prediction_service_pb2_grpc
+        from tensorflow.core.framework import types_pb2
+        if os_path.os.environ.get('https_proxy'):
+            del os_path.os.environ['https_proxy']
+        if os_path.os.environ.get('http_proxy'):
+            del os_path.os.environ['http_proxy']
+        options = [('grpc.max_send_message_length', 1000 * 1024 * 1024),
+                   ('grpc.max_receive_message_length', 1000 * 1024 * 1024)]
+        logger.debug(f"Predicting on port 0.0.0.0:{port}")
+        channel = grpc.insecure_channel(f"0.0.0.0:{port}", options=options)
+        stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
+        # create request
+        request = predict_pb2.PredictRequest()
+        request.model_spec.name = self.model_name
+        request.model_spec.signature_name = 'serving_default'
+
+        tensor = tf.make_tensor_proto(test_images, shape=test_images.shape, dtype=types_pb2.DT_FLOAT)
+        request.inputs['input'].CopyFrom(tensor)
+        r = stub.Predict.future(request, 5.0)  # 5 seconds
+        results = r.result()
+        preds = [tf.make_ndarray(results.outputs[key]) for key in self.output_names]
+
+        # data = json.dumps({"signature_name": "serving_default", "instances": test_images.tolist()})
+        #
+        # headers = {"content-type": "application/json"}
+        # json_response = requests.post(f'http://localhost:{port}/v1/models/{self.model_name}:predict', data=data,
+        #                               headers=headers)
+        # r = json.loads(json_response.text)
+        # if "predictions" in r:
+        #     predictions = r['predictions']
+        #     preds = defaultdict(list)
+        #     for i in range(len(test_images)):
+        #         for key in predictions[i].keys():
+        #             preds[key].append(tf.convert_to_tensor(predictions[i][key]))
+        #     preds = [tf.convert_to_tensor(preds[key]) for key in sorted(predictions[0].keys())]
+        # else:
+        #     preds = []
+        return preds
+
+    def detect(self, images, convert_BGR=False, to_annotation=False, on_port=None):
         """
         preprocess -> predict -> postprocess
+        :param on_port:
         :param images: list of images that has the same shape
         :param convert_BGR: if true, will convert BGR in preprocess
         :param to_annotation: if true, will convert to VOCAnnotation
@@ -214,8 +270,12 @@ class YoloModel(CNNModel):
         reverse_seq = self.get_reverse_seq(images[0].shape[:2])
 
         processed_images = self.process_test_data(images, convert_BGR)
-        preds = self.predict_on_batch(processed_images)
-        # preds = nms(preds)
+
+        if on_port:
+            preds = self.predict_on_docker(processed_images, port=on_port)
+        else:
+            preds = self.predict(processed_images)
+
         pred_boxes, scores = decode_tf_nms(preds, self.input_size + (self.channels,))
         pred_labels = convert2_class(scores, self.num_classes)
 
@@ -248,3 +308,8 @@ class YoloModel(CNNModel):
 
             annotations.append(VOCAnnotation(size=images[n_image].shape[:2], objects=objs))
         return annotations
+
+    def detect_helper(self, *args, **kwargs):
+        queue = args[-1]
+        annotation = self.detect(*args[:-1], **kwargs)
+        queue.put(annotation)
