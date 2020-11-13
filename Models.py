@@ -32,6 +32,7 @@ from utils.label.VOCLabel import (
     VOCAnnotation,
     VOCObject
 )
+from utils.timeit import Timer
 
 
 @logger.catch(reraise=True)
@@ -224,7 +225,7 @@ class YoloModel(CNNModel):
             del os_path.os.environ['http_proxy']
         options = [('grpc.max_send_message_length', 1000 * 1024 * 1024),
                    ('grpc.max_receive_message_length', 1000 * 1024 * 1024)]
-        logger.debug(f"Predicting on port 0.0.0.0:{port}")
+
         channel = grpc.insecure_channel(f"0.0.0.0:{port}", options=options)
         stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
         # create request
@@ -234,7 +235,9 @@ class YoloModel(CNNModel):
 
         tensor = tf.make_tensor_proto(test_images, shape=test_images.shape, dtype=types_pb2.DT_FLOAT)
         request.inputs['input'].CopyFrom(tensor)
+        timer_predict = Timer(f"Predicting on port 0.0.0.0:{port}")
         r = stub.Predict.future(request, 5.0)  # 5 seconds
+        timer_predict.stop()
         results = r.result()
         preds = [tf.make_ndarray(results.outputs[key]) for key in self.output_names]
 
