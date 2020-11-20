@@ -6,16 +6,20 @@
 """
 
 # python packages
-import json
+import socket
 from collections import defaultdict
 
 # 3rd-party packages
+import grpc
 import imgaug as ia
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from tensorflow.keras.models import load_model, Model
 from loguru import logger
+from tensorflow.keras.models import load_model, Model
+from tensorflow_serving.apis import predict_pb2
+from tensorflow_serving.apis import prediction_service_pb2_grpc
+from tensorflow.core.framework import types_pb2
 
 # self-defined packages
 from cv.yolov3.core.models import get_anchor_masks
@@ -198,6 +202,7 @@ class YoloModel(CNNModel):
                                                      max_box=max_box)
 
         self.__dict__.update(yolo_model.__dict__)
+        self._grpc_channels = defaultdict()
 
     def process_test_data(self, images, convert_BGR=False):
         images = self.img_aug.aug(images)[0]
@@ -214,33 +219,52 @@ class YoloModel(CNNModel):
 
         return images
 
-    def predict_on_docker(self, test_images, version="0001", port=8502):
-        import grpc
-        from tensorflow_serving.apis import predict_pb2
-        from tensorflow_serving.apis import prediction_service_pb2_grpc
-        from tensorflow.core.framework import types_pb2
-        if os_path.os.environ.get('https_proxy'):
-            del os_path.os.environ['https_proxy']
-        if os_path.os.environ.get('http_proxy'):
-            del os_path.os.environ['http_proxy']
-        options = [('grpc.max_send_message_length', 1000 * 1024 * 1024),
-                   ('grpc.max_receive_message_length', 1000 * 1024 * 1024)]
+    def get_grpc_channel(self, ip="0.0.0.0", port=8500, use_dns=False, reopen=False):
+        if use_dns:
+            ip = socket.gethostbyname(str(ip))
+        server = f"{ip}:{port}"
 
-        channel = grpc.insecure_channel(f"0.0.0.0:{port}", options=options)
-        stub = prediction_service_pb2_grpc.PredictionServiceStub(channel)
+        def log_connectivity_changes(connectivity):
+            logger.debug("Channel changed status to %s." % connectivity)
+
+        def restart_a_channel(server):
+            logger.debug(f"Restarting grpc channel {server}.")
+            channel = grpc.insecure_channel(server)
+            # channel.subscribe(log_connectivity_changes)
+            return channel
+
+        channel = self._grpc_channels.get(server)
+        if channel is None or reopen:
+            channel = restart_a_channel(server)
+        else:
+            # check connectivity state
+            connectivity_state = channel._connectivity_state.channel.check_connectivity_state(True)
+            if connectivity_state == grpc.ChannelConnectivity.SHUTDOWN:
+                # if it's dead restart then restart a channel
+                channel = restart_a_channel(server)
+
+        # assign to dict
+        self._grpc_channels[server] = channel
+
+        return self._grpc_channels[server]
+
+    def predict_on_docker(self, test_images, version="0001", ip="0.0.0.0", port=9000, use_dns=False):
+        stub = prediction_service_pb2_grpc.PredictionServiceStub(self.get_grpc_channel(ip, port, use_dns))
         # create request
         request = predict_pb2.PredictRequest()
         request.model_spec.name = self.model_name
         request.model_spec.signature_name = 'serving_default'
-
         tensor = tf.make_tensor_proto(test_images, shape=test_images.shape, dtype=types_pb2.DT_FLOAT)
         request.inputs['input'].CopyFrom(tensor)
-        timer_predict = Timer(f"Predicting on port 0.0.0.0:{port}")
-        r = stub.Predict.future(request, 5.0)  # 5 seconds
-        timer_predict.stop()
-        results = r.result()
+        try:
+            r = stub.Predict.future(request, 2.5)  # 5 seconds
+            results = r.result()
+        except grpc.RpcError as rpc_error:
+            if rpc_error.code() in [grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.UNKNOWN]:
+                logger.exception(rpc_error)
+                self.get_grpc_channel(ip, port, use_dns, reopen=True)
+            raise rpc_error
         preds = [tf.make_ndarray(results.outputs[key]) for key in self.output_names]
-
         # data = json.dumps({"signature_name": "serving_default", "instances": test_images.tolist()})
         #
         # headers = {"content-type": "application/json"}
@@ -273,9 +297,10 @@ class YoloModel(CNNModel):
         reverse_seq = self.get_reverse_seq(images[0].shape[:2])
 
         processed_images = self.process_test_data(images, convert_BGR)
-
         if on_port:
+            timer = Timer(f"[{os_path.os.getpid()}][{self.model_name}] predict on docker")
             preds = self.predict_on_docker(processed_images, port=on_port)
+            timer.stop()
         else:
             preds = self.predict(processed_images)
 
