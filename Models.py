@@ -62,6 +62,20 @@ class ImageAug:
         return images, labels
 
 
+class TFServeModel(Model):
+    def __init__(self, model_dir, version=None):
+        super(TFServeModel, self).__init__()
+        self.model_dir = model_dir
+        if version is None:
+            version = os_path.list_dir(model_dir, sort=True, sort_key=os_path.getctime, full_path=False)[-1]
+        self.version = version
+        model = tf.saved_model.load(os_path.join(self.model_dir, self.version))
+        self.__dict__.update(model.__dict__)
+
+    def predict(self, *args, **kwargs):
+        return self.signatures["serving_default"](*args, **kwargs)
+
+
 class CNNModel(Model):
     def __init__(self, model_name, input_size):
         super(CNNModel, self).__init__()
@@ -94,14 +108,9 @@ class CNNModel(Model):
         logger.debug('Load weights {}.'.format(weight_path))
         super(CNNModel, self).load_weights(weight_path, **kwargs)
 
-    def save_to_serve(self, model_dir, version="00000001", overwrite=True):
+    def save_to_serve(self, model_dir, version="0001", overwrite=True):
         output_dir = os_path.join(model_dir, self.model_name, version)
         tf.saved_model.save(self, output_dir)
-        # tf.keras.models.save_model(self,
-        #                            output_dir,
-        #                            overwrite=overwrite,
-        #                            include_optimizer=True,
-        #                            save_format=None)
         logger.debug(f"model has been exported to {output_dir}")
 
 
